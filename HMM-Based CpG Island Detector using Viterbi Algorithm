@@ -1,0 +1,150 @@
+import random
+# ─────────────────────────────────────────
+# 1. MODEL PARAMETERS (from Q1)
+# ─────────────────────────────────────────
+states = ['I', 'O'] # I = CpG Island, O = Non-CpG
+initial_prob = {
+'I': 0.5,
+'O': 0.5
+}
+transition_prob = {
+'I': {'I': 0.8, 'O': 0.2},
+'O': {'I': 0.2, 'O': 0.8}
+}
+emission_prob = {
+'I': {'A': 0.15, 'C': 0.35, 'G': 0.35, 'T': 0.15},
+'O': {'A': 0.30, 'C': 0.20, 'G': 0.20, 'T': 0.30}
+}
+# ─────────────────────────────────────────
+# 2. VITERBI ALGORITHM
+# ─────────────────────────────────────────
+def viterbi(sequence, states, initial_prob, transition_prob, emission_prob):
+"""
+Returns the most likely hidden state path for the given DNA sequence.
+"""
+T = len(sequence)
+# delta[t][s] = best probability of any path ending in state s at position t
+delta = [{} for _ in range(T)]
+psi = [{} for _ in range(T)] # back-pointers
+# --- Initialisation ---
+for s in states:
+delta[0][s] = initial_prob[s] * emission_prob[s][sequence[0]]
+psi[0][s] = None
+# --- Recursion ---
+
+for t in range(1, T):
+nuc = sequence[t]
+for s in states:
+best_prob, best_prev = max(
+(delta[t-1][s_prev] * transition_prob[s_prev][s], s_prev)
+for s_prev in states
+)
+delta[t][s] = best_prob * emission_prob[s][nuc]
+psi[t][s] = best_prev
+# --- Termination ---
+best_last_state = max(states, key=lambda s: delta[T-1][s])
+# --- Traceback ---
+path = [None] * T
+path[T-1] = best_last_state
+for t in range(T-2, -1, -1):
+path[t] = psi[t+1][path[t+1]]
+return path
+# ─────────────────────────────────────────
+# 3. IDENTIFY CpG ISLAND REGIONS
+# ─────────────────────────────────────────
+def find_cpg_islands(path):
+"""
+Scans the Viterbi path and returns a list of
+(start, end, length) for every run of state 'I'.
+"""
+islands = []
+start = None
+for i, state in enumerate(path):
+if state == 'I' and start is None:
+start = i # island begins
+elif state == 'O' and start is not None:
+islands.append((start, i - 1, i - start))
+start = None
+if start is not None: # island reaches end of sequence
+islands.append((start, len(path) - 1, len(path) - start))
+return islands
+# ─────────────────────────────────────────
+# 4. GENERATE A SYNTHETIC DNA SEQUENCE
+# (realistic mix: ~30 % CpG-rich regions)
+# ─────────────────────────────────────────
+def generate_dna(length=500, seed=42):
+
+"""
+Generates a synthetic DNA sequence by alternating between
+CpG-rich blocks (A/T-poor) and Non-CpG blocks (A/T-rich).
+"""
+random.seed(seed)
+seq = []
+pos = 0
+blocks = [] # (start, end, type) ground-truth
+while pos < length:
+# decide region type and length
+region_type = random.choice(['CpG', 'NonCpG', 'NonCpG']) # 1:2 ratio
+region_len = random.randint(20, 60)
+region_len = min(region_len, length - pos)
+if region_type == 'CpG':
+nucleotides = random.choices('ACGT', weights=[0.15, 0.35, 0.35, 0.15], k=region_len)
+else:
+nucleotides = random.choices('ACGT', weights=[0.30, 0.20, 0.20, 0.30], k=region_len)
+seq.extend(nucleotides)
+blocks.append((pos, pos + region_len - 1, region_type))
+pos += region_len
+return ''.join(seq), blocks
+# ─────────────────────────────────────────
+# 5. PRETTY PRINT HELPERS
+# ─────────────────────────────────────────
+def print_sequence_with_path(sequence, path, line_width=80):
+"""Prints the DNA sequence and state path in aligned blocks."""
+print("\n── Sequence & Viterbi Path (I = CpG Island, O = Non-CpG) ──")
+for start in range(0, len(sequence), line_width):
+end = start + line_width
+chunk = sequence[start:end]
+pchunk = ''.join(path[start:end])
+print(f" Pos {start+1:>4}-{min(end, len(sequence)):<4} {chunk}")
+print(f" {'State':>12} {pchunk}")
+print()
+def print_islands(islands):
+print("── Detected CpG Islands ──────────────────────────────────────")
+print(f" {'#':<5} {'Start':>7} {'End':>7} {'Length':>8}")
+print(f" {'─'*5} {'─'*7} {'─'*7} {'─'*8}")
+for idx, (s, e, l) in enumerate(islands, 1):
+print(f" {idx:<5} {s+1:>7} {e+1:>7} {l:>8} bp")
+total_bp = sum(l for _, _, l in islands)
+
+print(f"\n Total CpG islands : {len(islands)}")
+print(f" Total CpG bp : {total_bp} / {SEQ_LENGTH} ({100*total_bp/SEQ_LENGTH:.1f} %)")
+# ─────────────────────────────────────────
+# 6. MAIN
+# ─────────────────────────────────────────
+SEQ_LENGTH = 500
+if __name__ == "__main__":
+print("=" * 65)
+print(" HMM CpG Island Detector — Viterbi Algorithm")
+print("=" * 65)
+# Generate sequence
+dna_sequence, ground_truth_blocks = generate_dna(length=SEQ_LENGTH)
+print(f"\n Sequence length : {len(dna_sequence)} bp")
+print(f" First 60 nt : {dna_sequence[:60]}...")
+# Run Viterbi
+path = viterbi(dna_sequence, states, initial_prob, transition_prob, emission_prob)
+# Find islands
+islands = find_cpg_islands(path)
+# Results
+print_sequence_with_path(dna_sequence, path, line_width=60)
+print_islands(islands)
+# Ground truth comparison
+print("\n── Ground-Truth CpG Regions (Synthetic Generator) ───────────")
+print(f" {'#':<5} {'Start':>7} {'End':>7} {'Length':>8} {'Type'}")
+print(f" {'─'*5} {'─'*7} {'─'*7} {'─'*8} {'─'*7}")
+for idx, (s, e, rtype) in enumerate(ground_truth_blocks, 1):
+marker = " ◀ CpG" if rtype == "CpG" else ""
+print(f" {idx:<5} {s+1:>7} {e+1:>7} {(e-s+1):>8} bp {rtype}{marker}")
+print("\n Note: Minor boundary differences are expected — the")
+print(" Viterbi path reflects probabilistic inference, not")
+print(" exact knowledge of the generation process.")
+print("=" * 65)
