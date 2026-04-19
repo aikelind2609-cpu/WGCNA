@@ -1,0 +1,238 @@
+# DEG analysis
+library(limma)
+library(edgeR)
+library(readr)
+# setwd("~/Downloads")
+# Normalization
+# Load necessary library
+library(readr)
+# Load without setting row names
+data_raw <- read.csv("GSE282430_expression.csv", check.names = FALSE, stringsAsFactors = FALSE)
+head(data_raw[, 1:5])
+colnames(data_raw)[1:5]
+
+
+# Remove rows with missing gene names
+data_clean <- data_raw[!is.na(data_raw[,1]) & data_raw[,1] != "", ]
+# Now set gene names as rownames
+rownames(data_clean) <- data_clean[,1]
+expression_data <- data_clean[,-1]
+dim(expression_data)
+head(expression_data[,1:5])
+
+# making expression data completely numeric
+expression_data_numeric <- as.data.frame(lapply(expression_data, function(x) as.numeric(as.character(x))))
+rownames(expression_data_numeric) <- rownames(expression_data)
+# Check structure
+str(expression_data_numeric[, 1:5])
+summary(expression_data_numeric[, 1:5])
+boxplot(expression_data_numeric, las = 2, main = "Expression Distribution")
+
+# fixing
+expression_data_numeric <- expression_data_numeric[, !(colnames(expression_data_numeric) %in% c("chromosome", "start", "end", "gene", "gene_type"))]
+dim(expression_data_numeric)
+colnames(expression_data_numeric)
+# Boxplot again
+boxplot(expression_data_numeric, las = 2, main = "Expression Distribution (Corrected)")
+
+#library(limma)
+library(limma)
+group <- factor(c(rep("Tumor", 22), rep("Normal", 6))) 
+colnames(expression_data_numeric) 
+# Creating design matrix
+design <- model.matrix(~0 + group)
+colnames(design) <- levels(group)
+# Fit linear model
+fit <- lmFit(expression_data_numeric, design)
+# error detected
+
+# fixing dim
+ncol(expression_data_numeric)
+colnames(expression_data_numeric)
+
+# making dim of exp and desg same
+samples <- colnames(expression_data_numeric)
+group <- ifelse(grepl("^hT", samples), "Tumor", "Normal")
+group <- factor(group)
+length(group)
+ncol(expression_data_numeric)
+# Creating design matrix again
+design <- model.matrix(~0 + group)
+colnames(design) <- levels(group)
+
+library(limma)
+
+fit <- lmFit(expression_data_numeric, design)
+contrast_matrix <- makeContrasts(Tumor - Normal, levels = design)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+
+deg_results <- topTable(fit2, adjust = "fdr", number = Inf)
+write.csv(deg_results, "DEG_results_Tumor_vs_Normal.csv")
+
+volcanoplot(fit2, highlight = 20, names = rownames(expression_data_numeric), main = "Tumor vs Normal")
+# plotted only top genes because of overlap
+top_genes <- head(deg_results[order(deg_results$adj.P.Val), ], 10)
+volcanoplot(fit2, highlight = 0, names = rownames(expression_data_numeric), main = "Tumor vs Normal")
+with(top_genes, text(logFC, -log10(P.Value), labels = rownames(top_genes), pos = 3, cex = 0.8, col = "blue"))
+
+# other method for volcano plot
+BiocManager::install("EnhancedVolcano")
+library(EnhancedVolcano)
+
+EnhancedVolcano(deg_results,
+                lab = rownames(deg_results),
+                x = 'logFC',
+                y = 'P.Value',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                pointSize = 2.0,
+                labSize = 3.0,
+                title = 'Tumor vs Normal',
+                subtitle = "DEG Volcano Plot",
+                caption = "log2FC cutoff = 1; p < 0.05",
+                colAlpha = 0.6,
+                legendPosition = 'right',
+                drawConnectors = TRUE
+)
+# running again for 100 genes
+class(deg_results)
+str(deg_results)
+colnames(deg_results)
+
+deg_top100 <- head(deg_results[order(deg_results$adj.P.Val), ], 100)
+EnhancedVolcano(deg_top100,
+                lab = rownames(deg_top100),
+                x = 'logFC',
+                y = 'P.Value',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                title = 'Top 100 DEGs',
+                drawConnectors = TRUE
+)
+# to increase overlaps
+EnhancedVolcano(deg_top100,
+                lab = rownames(deg_top100),
+                x = 'logFC',
+                y = 'P.Value',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                title = 'Top 100 DEGs',
+                subtitle = 'Tumor vs Normal',
+                drawConnectors = TRUE,
+                max.overlaps = 1000
+)
+# running again because very cluttered
+deg_top <- head(deg_results[order(deg_results$adj.P.Val), ], 20)
+
+EnhancedVolcano(deg_results,
+                lab = rownames(deg_results),
+                selectLab = rownames(deg_top),
+                x = 'logFC',
+                y = 'P.Value',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                title = 'Top 20 DEGs',
+                subtitle = 'Tumor vs Normal',
+                drawConnectors = TRUE,
+                labSize = 3,
+                max.overlaps = Inf
+)
+selectLab = rownames(deg_top)
+deg_top20 <- head(deg_results[order(deg_results$adj.P.Val), ], 20)
+top20_gene_names <- rownames(deg_top20)
+# JUST OPTIONAL
+EnhancedVolcano(deg_results,
+                lab = rownames(deg_results),
+                selectLab = top20_gene_names,
+                x = 'logFC',
+                y = 'P.Value',
+                pCutoff = 0.05,
+                FCcutoff = 1,
+                title = 'Top 20 DEGs',
+                subtitle = 'Tumor vs Normal',
+                drawConnectors = TRUE,
+                labSize = 3,
+                max.overlaps = Inf
+)
+
+# Venn diagram
+library(VennDiagram)
+# loading WGCNA list
+# setwd("~/Downloads/final/ENVMT")
+hub_expr <- read.csv("hubExpr.csv", row.names = 1)
+hub_genes <- colnames(hub_expr)
+head(hub_genes)
+length(hub_genes)
+# loading DEG list
+deg_genes <- deg_results[deg_results$adj.P.Val < 0.05& abs(deg_results$logFC) > 1, ]
+deg_gene_names <- rownames(deg_genes)
+
+# Plot Venn
+venn.plot <- venn.diagram(
+  x = list(
+    "WGCNA Hub Genes" = hub_genes,
+    "Significant DEGs" = deg_gene_names
+  ),
+  filename = "Venn_Hub_vs_DEG.png",
+  fill = c("cornflowerblue", "tomato"),
+  alpha = 0.5,
+  cex = 2,
+  cat.cex = 1.5,
+  cat.pos = 0,
+  cat.dist = 0.05,
+  main = "Overlap: Hub Genes vs DEGs"
+)
+
+# Save overlap genes
+common_genes <- intersect(hub_genes, deg_gene_names)
+write.csv(common_genes, "Overlapping_Hub_DEGs.csv")
+
+
+# trying with deg20 genes
+deg_genes <- deg_top20[deg_top20$adj.P.Val < 0.05 & abs(deg_top20$logFC) > 1, ]
+deg_gene_names <- rownames(deg_genes)
+# Plot Venn
+venn.plot <- venn.diagram(
+  x = list(
+    "WGCNA Hub Genes" = hub_genes,
+    "Significant DEGs" = deg_gene_names
+  ),
+  filename = "Venn_top20_DEGS.png",
+  fill = c("cornflowerblue", "tomato"),
+  alpha = 0.5,
+  cex = 2,
+  cat.cex = 1.5,
+  cat.pos = 0,
+  cat.dist = 0.05,
+  main = "Overlap: Hub Genes vs DEGs"
+)
+
+write.csv(deg_genes, "deg_genes.csv", row.names = FALSE)
+write.csv(deg_results, "deg_results.csv", row.names = FALSE)
+write.csv(deg_top, "deg_top.csv", row.names = FALSE)
+write.csv(deg_top20, "deg_top20.csv", row.names = FALSE)
+write.csv(design, "design.csv", row.names = FALSE)
+write.csv(expression_data_numeric, "expression_data_numeric.csv", row.names = FALSE)
+write.csv(hub_expr, "hub_expr.csv", row.names = FALSE)
+write.csv(top_genes, "top_genes.csv", row.names = FALSE)
+
+# Trying with deg100genes
+deg_genes <- deg_top100[deg_top100$adj.P.Val < 0.05 & abs(deg_top20$logFC) > 1, ]
+deg_gene_names <- rownames(deg_genes)
+
+# Plot Venn
+venn.plot <- venn.diagram(
+  x = list(
+    "WGCNA Hub Genes" = hub_genes,
+    "Significant DEGs" = deg_gene_names
+  ),
+  filename = "Venn_top100_DEGS.png",
+  fill = c("cornflowerblue", "tomato"),
+  alpha = 0.5,
+  cex = 2,
+  cat.cex = 1.5,
+  cat.pos = 0,
+  cat.dist = 0.05,
+  main = "Overlap: Hub Genes vs DEGs"
+)
