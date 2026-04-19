@@ -1,0 +1,285 @@
+# To perform WGCNA 
+# setwd("~/Downloads")
+expression_data_raw <- read.csv("GSE282430_expression.csv", header = TRUE, check.names = FALSE)
+head(expression_data_raw[, 1:5])
+
+expression_data_raw <- expression_data_raw[!is.na(expression_data_raw$gene) & expression_data_raw$gene != "", ]
+rownames(expression_data_raw) <- expression_data_raw$gene
+expression_data <- expression_data_raw[, 6:ncol(expression_data_raw)]
+
+datExpr0 <- as.data.frame(t(expression_data))
+
+library(WGCNA)
+options(stringsAsFactors = FALSE)
+
+gsg <- goodSamplesGenes(datExpr0, verbose = 3)
+gsg$allOK 
+if (!gsg$allOK) {
+  datExpr0 <- datExpr0[gsg$goodSamples, gsg$goodGenes]
+}
+sampleTree <- hclust(dist(datExpr0), method = "average")
+plot(sampleTree, main = "Sample clustering to detect outliers", sub = "", xlab = "", cex.lab = 1.5)
+
+powers <- c(1:20)
+sft <- pickSoftThreshold(datExpr0, powerVector = powers, verbose = 5)
+par(mfrow = c(1, 2))
+cex1 <- 0.9
+
+# Plot 1: Scale-free topology fit index
+plot(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
+     xlab = "Soft Threshold (power)", ylab = "Scale Free Topology Model Fit, signed R^2", type = "n",
+     main = "Scale independence")
+text(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
+     labels = powers, cex = cex1, col = "red")
+abline(h = 0.90, col = "blue")
+
+# Plot 2: Mean connectivity
+plot(sft$fitIndices[, 1], sft$fitIndices[, 5],
+     xlab = "Soft Threshold (power)", ylab = "Mean Connectivity", type = "n",
+     main = "Mean connectivity")
+text(sft$fitIndices[, 1], sft$fitIndices[, 5], labels = powers, cex = cex1, col = "red")
+
+net <- blockwiseModules(
+  datExpr0,
+  power = 14,
+  TOMType = "unsigned",
+  minModuleSize = 30,
+  reassignThreshold = 0,
+  mergeCutHeight = 0.25,
+  numericLabels = TRUE,
+  pamRespectsDendro = FALSE,
+  saveTOMs = FALSE,
+  verbose = 3
+)
+
+moduleColors <- labels2colors(net$colors)
+plotDendroAndColors(
+  net$dendrograms[[1]],
+  moduleColors[net$blockGenes[[1]]],
+  "Module colors",
+  dendroLabels = FALSE,
+  hang = 0.03,
+  addGuide = TRUE,
+  guideHang = 0.05
+)
+table(moduleColors)
+
+sample_names <- rownames(datExpr0)
+group <- ifelse(grepl("hN", sample_names), "Normal", "Tumor")
+traitData <- data.frame(row.names = sample_names, Group = as.factor(group))
+# Convert factors to numeric
+traitData_numeric <- as.data.frame(model.matrix(~ Group, data = traitData)[, -1])
+colnames(traitData_numeric) <- "Tumor_vs_Normal"
+MEs <- net$MEs
+moduleTraitCor <- cor(MEs, traitData_numeric, use = "p")
+moduleTraitPvalue <- corPvalueStudent(moduleTraitCor, nrow(datExpr0))
+
+library("pheatmap")
+
+# Combine correlation and p-value into a text matrix
+textMatrix <- paste(signif(moduleTraitCor, 2), "\n(", signif(moduleTraitPvalue, 1), ")", sep = "")
+dim(textMatrix) <- dim(moduleTraitCor)
+
+
+# Plot
+pheatmap(moduleTraitCor,
+         cluster_cols = FALSE,
+         cluster_rows = TRUE,
+         display_numbers = textMatrix,
+         main = "Module-Trait Relationships")
+
+names(net$MEs)
+# Get module eigengene names and colors
+ME_names <- names(net$MEs)
+color_labels <- unique(moduleColors)  
+
+eigengene_colors <- substring(ME_names, 3)
+which(ME_names == "ME7") 
+ME7_vector <- net$MEs$ME7
+
+
+# Compute correlation with each eigengene to find the highest match
+cor_vals <- sapply(unique(moduleColors), function(color) {
+  eig <- moduleEigengenes(datExpr0, colors = moduleColors)$eigengenes
+  cor_val <- cor(ME7_vector, eig[[paste0("ME", color)]], use = "complete.obs")
+  return(cor_val)
+})
+sorted_cor <- sort(cor_vals, decreasing = TRUE)
+sorted_cor
+
+length(net$colors)
+head(net$colors)
+table(net$colors)
+
+moduleColors <- labels2colors(net$colors) # most imp 
+table(moduleColors)
+head(tumor_genes_ME7)
+write.csv(tumor_genes_ME7, "ME7_red_tumor_genes.csv", row.names = FALSE)
+
+# new
+head(rownames(datExpr0))
+head(names(moduleColors)) 
+datExpr0 <- read.csv("GSE282430_expression.csv", row.names = 1)
+
+expr_raw <- read.csv("GSE282430_expression.csv", stringsAsFactors = FALSE)
+head(expr_raw[, 1:5])
+sum(is.na(expr_raw[,1]))
+length(unique(expr_raw[,1]))
+rownames(expr_raw) <- expr_raw[,1]
+datExpr0 <- expr_raw[, -1]
+sum(is.na(expr_raw[,1])) > 0  ||  length(unique(expr_raw[,1])) != nrow(expr_raw)
+expr_raw <- expr_raw[!is.na(expr_raw[,1]), ]
+expr_raw <- expr_raw[!duplicated(expr_raw[,1]), ]
+rownames(expr_raw) <- expr_raw[,1]
+datExpr0 <- expr_raw[, -1]
+
+head(rownames(datExpr0))
+dim(datExpr0)  
+
+# Hub gene identification
+library(WGCNA)
+# hub gene identification
+# Again ran gsg for making dim equal
+print(goodGenes)
+class(goodGenes)
+gsg <- goodSamplesGenes(datExpr0, verbose = 3)
+goodGenes <- gsg$goodGenes
+gsg <- goodSamplesGenes(datExpr0, verbose = 3)
+
+if (!gsg$allOK) {
+  datExpr0 <- datExpr0[gsg$goodSamples, gsg$goodGenes]
+}
+dim(datExpr0)
+length(moduleColors)
+
+MEs0 <- moduleEigengenes(datExpr0, moduleColors)$eigengenes
+MEs <- orderMEs(MEs0)
+trait_vector <- ifelse(grepl("^hT", rownames(datExpr0)), 1, 0)
+traitData <- data.frame(TumorNormal = trait_vector)
+rownames(traitData) <- rownames(datExpr0)
+keyModuleColor <- "red"
+
+# Calculating Module-membership
+MM <- cor(datExpr0, MEs[, paste0("ME", keyModuleColor)], use = "p")
+MM_pvalue <- corPvalueStudent(MM, nSamples = nrow(datExpr0))
+
+# Correlation of each gene with Tumor/Normal trait (Gene Significance)
+GS <- cor(datExpr0, traitData$TumorNormal, use = "p")
+GS_pvalue <- corPvalueStudent(GS, nSamples = nrow(datExpr0))
+
+inRed <- moduleColors == keyModuleColor
+# Select genes with high MM and GS
+hubGenes <- colnames(datExpr0)[inRed][abs(MM[inRed]) > 0.8 & abs(GS[inRed]) > 0.5]
+print(hubGenes)
+write.table(hubGenes, "hub_genes_red_module.csv", quote = FALSE, sep = "\t", row.names = FALSE)
+
+plot(abs(MM[inRed]), abs(GS[inRed]),
+     xlab = paste("Module Membership in", keyModuleColor, "module"),
+     ylab = "Gene Significance for Tumor vs Normal",
+     main = "Hub Gene Identification: MM vs GS",
+     col = keyModuleColor, pch = 19)
+
+png("MM_vs_GS_plot.png", width = 800, height = 600)
+par(mar = c(5, 5, 4, 2))
+plot(abs(MM[inRed]), abs(GS[inRed]),
+     xlab = paste("Module Membership in", keyModuleColor, "module"),
+     ylab = "Gene Significance for Tumor vs Normal",
+     main = "Hub Gene Identification: MM vs GS",
+     col = keyModuleColor, pch = 19)
+dev.off()
+
+# TOP hub genes (through R graphics)
+mm_cutoff <- 0.8
+gs_cutoff <- 0.5
+
+dev.new()
+par(mar = c(5, 5, 4, 2))
+
+plot(abs(MM[inModule]), abs(GS[inModule]),
+     xlab = paste("Module Membership in", keyModuleColor, "module"),
+     ylab = "Gene Significance for Tumor vs Normal",
+     main = "Hub Gene Identification: MM vs GS",
+     col = ifelse(hubGeneMask, "red", "grey"), pch = 19)
+
+legend("bottomright", legend = c("Hub genes", "Other genes"),
+       col = c("red", "grey"), pch = 19)
+
+# other method
+png("MM_vs_GS_highlighted.png", width = 1000, height = 800)
+par(mar = c(5, 5, 4, 2))
+
+plot(abs(MM[inModule]), abs(GS[inModule]),
+     xlab = paste("Module Membership in", keyModuleColor, "module"),
+     ylab = "Gene Significance for Tumor vs Normal",
+     main = "Hub Gene Identification: MM vs GS",
+     col = ifelse(hubGeneMask, "red", "grey"), pch = 19)
+
+legend("bottomright", legend = c("Hub genes", "Other genes"),
+       col = c("red", "grey"), pch = 19)
+
+# labelling of hub genes
+keyModuleColor <- "red"
+inModule <- moduleColors == keyModuleColor
+genesInModule <- colnames(datExpr0)[inModule]
+
+# Select hub genes
+hubGeneMask <- abs(MM[inModule]) > mm_cutoff & abs(GS[inModule]) > gs_cutoff
+hubGenes <- genesInModule[hubGeneMask]
+
+# Plot
+png("MM_vs_GS_all_hub_genes_labeled.png", width = 1200, height = 1000)
+par(mar = c(5, 5, 4, 2))
+
+plot(abs(MM[inModule]), abs(GS[inModule]),
+     xlab = paste("Module Membership in", keyModuleColor, "module"),
+     ylab = "Gene Significance for Tumor vs Normal",
+     main = "All Hub Genes Labeled (MM > 0.8 & GS > 0.5)",
+     col = ifelse(hubGeneMask, "red", "grey"), pch = 19)
+
+# Add text labels for all hub genes
+text(x = abs(MM[inModule])[hubGeneMask],
+     y = abs(GS[inModule])[hubGeneMask],
+     labels = hubGenes,
+     pos = 3, cex = 0.7, col = "blue")
+
+legend("bottomright", legend = c("Hub Genes", "Other Genes"),
+       col = c("red", "grey"), pch = 19)
+
+dev.off()
+
+# heatmap
+library(pheatmap)
+hubExpr <- datExpr0[, hubGenes]
+hubExpr_scaled <- scale(hubExpr)
+sample_group <- ifelse(grepl("^hT", rownames(datExpr0)), "Tumor", "Normal")
+annotation_col <- data.frame(Group = sample_group)
+rownames(annotation_col) <- rownames(datExpr0)
+pheatmap(hubExpr_scaled,
+         annotation_row = annotation_col,
+         show_rownames = FALSE,
+         fontsize_col = 8,
+         main = "Expression Heatmap of Hub Genes (Red Module)",
+         color = colorRampPalette(c("navy", "white", "firebrick3"))(50))
+
+write.csv(hubGenesTable, "hub_genes_table.csv", row.names = FALSE)
+write.csv(datExpr0, "datExpr0.csv", row.names = FALSE)
+# setwd("~/Downloads/final/ENVMT")
+write.csv(datExpr0, "datExpr0.csv", row.names = FALSE)
+write.csv(expression_data, "expression_data.csv", row.names = FALSE)
+write.csv(GS_pvalue, "GS_pvalue.csv", row.names = FALSE)
+write.csv(hub_gene_data, "hub_gene_data.csv", row.names = FALSE)
+write.csv(annotation_col, "annotation_col.csv", row.names = FALSE)
+write.csv(expr_raw, "expr_raw.csv", row.names = FALSE)
+write.csv(hubExpr, "hubExpr.csv", row.names = FALSE)
+write.csv(hubExpr_scaled, "hubExpr_scaled.csv", row.names = FALSE)
+write.csv(ME_col_map, "ME_col_map.csv", row.names = FALSE)
+write.csv(MEs, "MEs.csv", row.names = FALSE)
+write.csv(MM, "MM.csv", row.names = FALSE)
+write.csv(MM_pvalue, "MM_pvalue.csv", row.names = FALSE)
+write.csv(moduleTraitCor, "moduleTraitCor.csv", row.names = FALSE)
+write.csv(moduleTraitPvalue, "moduleTraitPvalue.csv", row.names = FALSE)
+write.csv(textMatrix, "textMatrix.csv", row.names = FALSE)
+write.csv(top_hubs, "top_hubs.csv", row.names = FALSE)
+write.csv(traitData, "traitData.csv", row.names = FALSE)
+write.csv(traitData_numeric, "traitData_numeric.csv", row.names = FALSE)
+
